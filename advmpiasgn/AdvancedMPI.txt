@@ -1,0 +1,692 @@
+Advanced MPI
+Dec 8, 2019
+
+1
+
+Recap
+
+Program
+order
+
+x = 1, y = 2
+...
+x++
+...
+print x, y
+
+x = 2, y = 3
+...
+y++
+...
+print x, y
+
+x = 3, y = 4
+...
+x++; y++
+...
+print x, y
+
+2, 2
+
+2, 4
+
+4, 5
+
+Distinct address space
+2
+
+Recap – Hydra Process Manager
+Memory
+
+host1
+
+host2
+
+host3
+
+host4
+
+Internode
+
+Intranode
+
+Launch node
+
+Proxy
+
+Proxy
+
+Proxy
+
+KVS $
+
+KVS $
+
+KVS $
+
+KVS $
+
+mpiexec –n 4 –hosts host1,host2,host3,host4 ./exe
+3
+
+Hydra Process Manager
+
+Source: wiki.mpich.org
+
+4
+
+Launch Node
+
+5
+
+Compute Nodes
+
+6
+
+MPI Stack
+APPLICATION
+
+MPI (Machine-independent)
+DEVICE (Machine-dependent)
+Low-level interfaces
+
+7
+
+Communication Subsystem
+•
+•
+•
+•
+
+Communication using sockets (one option)
+MPI handles communications, progress etc.
+Communication channels determine performance
+Shared-memory queue for intranode messaging
+
+Send queue
+
+Recv queue
+
+Reference: Design and Evaluation of Nemesis, a Scalable, Low-Latency, Message-Passing Communication Subsystem 8by
+Buntinas et al.
+
+Revisions
+
+Correct
+code?
+
+9
+
+Parallel Programming is Hard!
+• Programmer’s responsibility to ensure correctness
+• Some processes may be waiting for data
+• Ensure that number of sends = number of receives
+• Avoid code that may lead to deadlocks
+
+10
+
+Eager vs. Rendezvous Protocol
+• Eager
+• Send completes without acknowledgement from destination
+• MPIR_CVAR_CH3_EAGER_MAX_MSG_SIZE (check output of mpivars)
+• Small messages - typically 128 KB (at least in MPICH)
+
+• Rendezvous
+• Requires an acknowledgement from a matching receive
+• Large messages
+
+11
+
+MPI Ranks
+Core
+
+Rank 0
+
+Rank 1
+
+Process
+Memory
+
+Rank 2
+
+Rank 3
+12
+
+Process Placement
+Rank A
+
+Rank B
+P2P communication between
+different pairs of processes
+may or may not take the same
+amount of time
+
+Rank C
+
+Rank D
+13
+
+Process Placement
+Rank A
+
+Rank B
+
+Rank A – B
+#Hops=1
+Rank A – D
+#Hops=2
+
+Rank C
+
+Rank D
+
+Rank A – C
+#Hops=1
+14
+
+Communication Time
+Rank A
+
+Rank B
+R
+
+Rank A – D
+#Hops=2
+T2 = D/R
+
+R
+
+Rank C
+
+Rank A – B
+#Hops=1
+T1 = D/R
+
+Rank D
+
+T1 vs. T2 ?
+15
+
+DEMO 1, 2, 3, 4
+
+16
+
+Collective Communications
+• Must be called by all processes that are part of the communicator
+
+Types
+• Synchronization (MPI_Barrier)
+• Global communication (MPI_Bcast, MPI_Gather, …)
+• Global reduction (MPI_Reduce, ..)
+
+17
+
+Today
+• MPI_Barrier
+• MPI_Bcast
+• MPI_Gather
+• MPI_Scatter
+• MPI_Reduce
+
+18
+
+Barrier
+• MPI_Barrier (comm)
+• Collective call
+• Caller returns only after all processes have entered the call
+
+Compute…
+Communicate…
+MPI_Barrier (MPI_COMM_WORLD);
+
+19
+
+Broadcast
+X
+
+• Root process sends message to all processes
+• Any process can be root process but has to be the
+same across invocations from all processes
+• int MPI_Bcast (buffer, count, datatype, root, comm)
+• count – Number of elements in buffer
+• buffer – Input at root only
+
+X
+
+X
+X
+X
+X
+X
+
+X
+X
+20
+
+How is broadcast implemented?
+• P2P communications
+• Naïve implementation?
+• Binomial tree algorithm
+
+21
+
+Gather
+• Gathers values from all processes to a root process
+• int MPI_Gather (
+const void *sendbuf,
+int sendcount,
+MPI_Datatype sendtype,
+void *recvbuf,
+int recvcount,
+MPI_Datatype recvtype,
+int root,
+MPI_Comm comm
+)
+• Arguments recv* not relevant on non-root processes
+22
+
+Scatter
+• Scatters values to all processes from a root process
+• int MPI_Scatter (
+const void *sendbuf,
+int sendcount,
+MPI_Datatype sendtype,
+void *recvbuf,
+int recvcount,
+MPI_Datatype recvtype,
+int root,
+MPI_Comm comm
+)
+• Arguments send* not relevant on non-root processes
+• Output parameter – recvbuf
+23
+
+Allgather
+PROCESSES
+
+• All processes gather values from all
+processes
+• int MPI_Allgather (sendbuf,
+sendcount, sendtype, recvbuf,
+recvcount, recvtype, comm)
+
+DATA
+
+A0
+A1
+A2
+
+A0
+
+A1
+
+A2
+
+A0
+
+A1
+
+A2
+
+A0
+
+A1
+
+A2
+24
+
+Gatherv
+• int MPI_Gatherv (sendbuf, sendcount, sendtype, recvbuf,
+recvcounts, displs, recvtype, root, comm)
+
+PROCESSES
+
+• Root gathers values of different lengths from all
+processes
+
+DATA
+
+2B
+4B
+4B
+
+• recvcounts – Number of elements to be received from
+each process
+
+• displs – Displacement at which to place received data
+
+2B
+
+4B
+
+4B
+
+MPI_Recv (recvbuf+displs[i], recvcounts[i], recvtype, i, i,
+comm, &status) at root
+MPI_Send at non-root
+25
+
+Reduce
+• MPI_Reduce (inbuf, outbuf, count, datatype, op, root, comm)
+• Combines element in inbuf of each process
+• Combined value in outbuf of root
+• op: MIN, MAX, SUM, PROD, …
+
+0 1 2 3 4 5 6
+
+2 1 2 3 2 5 2
+
+2 1 2 3 4 5 6
+
+0 1 1 0 1 1 0
+MAX at root
+
+26
+
+Scalability
+“The scalability of a parallel system is a measure of its capacity to increase speedup in
+proportion to the number of processing elements.” – Introduction to Parallel Computing
+
+Strong scaling
+• Fixed problem size
+• Increase number of processes
+• Efficiency decreases, in general
+
+Weak scaling
+• Fixed problem size per process
+• Increase number of processes
+• Increase problem size
+
+27
+
+Demo
+
+Strong and Weak Scaling using Reduce
+
+28
+
+Non-blocking Collectives
+• MPI_Ibcast (buffer, count, datatype, root, comm, request)
+• MPI_Igather (sendbuf, sendcount, sendtype, recvbuf, recvcount,
+recvtype, root, comm, request)
+• MPI_Iscatter (sendbuf, sendcount, sendtype, recvbuf, recvcount,
+recvtype, root, comm, request)
+• MPI_Ireduce (sendbuf, recvbuf, count, datatype, op, root, comm,
+request)
+• MPI_Igatherv (sendbuf, sendcount, sendtype, recvbuf, recvcounts,
+displs, recvtype, root, comm, request)
+29
+
+Parallelization – Matrix Vector Multiplication
+P=3
+
+P1
+
+Decomposition
+Assignment
+
+P2
+
+P3
+
+Communications
+• Allgather
+• Gather
+Placement
+30
+
+Parallelization – Stencils
+Grid
+point
+Communications?
+4 Isends()
+4 Irecvs()
+
+31
+
+MPI_COMM_WORLD
+
+32
+
+Sub-communicator
+- Logical subset
+- Different contexts
+
+Intra-communicator
+
+Intra-communicator
+33
+
+MPI_COMM_SPLIT
+MPI_Comm_split (MPI_Comm oldcomm, int color, int key, MPI_Comm
+*newcomm)
+• Collective call
+• Logically divides based on color
+• Same color processes form a group
+• Some processes may not be part of newcomm (MPI_UNDEFINED)
+
+• Rank assignment based on key
+
+34
+
+Logical subsets of processes
+2
+
+16
+
+5
+10
+
+1
+
+14
+17
+
+6
+
+0
+
+8
+
+3
+7
+4
+
+00
+21
+42
+…
+
+13
+
+9
+
+11
+19
+
+15
+12
+18
+
+How do you assign one color to odd processes and another color to even processes ?
+color = rank % 2
+
+10
+31
+52
+…
+
+35
+
+Example code
+int newrank, newsize, color = myrank%3;
+MPI_Comm newcomm;
+
+OUTPUT for n=9
+0: 0 of 3
+1: 0 of 3
+MPI_Comm_split (MPI_COMM_WORLD, color, myrank, &newcomm);
+2: 0 of 3
+3: 1 of 3
+MPI_Comm_rank (newcomm, &newrank);
+4: 1 of 3
+5: 1 of 3
+MPI_Comm_size (newcomm, &newsize);
+6: 2 of 3
+printf ("%d: %d of %d\n", myrank, newrank, newsize);
+7: 2 of 3
+8: 2 of 3
+MPI_Comm_free (&newcomm);
+36
+
+Thank You
+
+37
+
+Backup
+
+38
+
+Alltoall
+
+Equivalent collective?
+• MPI_Scatter at all processes
+• Cons?
+
+PROCESSES
+
+• Send data from all processes to all processes
+• int MPI_Alltoall (sendbuf, sendcount, sendtype,
+recvbuf, recvcount, recvtype, comm)
+• Output parameter – recvbuf
+
+DATA
+
+A0
+
+A1
+
+A2
+
+B0
+
+B1
+
+B2
+
+C0
+
+C1
+
+C2
+
+A0
+
+B0
+
+C0
+
+A1
+
+B1
+
+C1
+
+A2
+
+B2
+
+C2
+39
+
+Allgatherv
+PROCESSES
+
+• All processes gather values of
+different lengths from all processes
+• int MPI_Allgatherv (sendbuf,
+sendcount, sendtype, recvbuf,
+recvcounts, displs, recvtype, comm)
+• recvcounts – Number of elements to
+be received from each process
+• displs – Displacement at which to
+place received data
+
+DATA
+
+2B
+4B
+4B
+
+2B
+
+4B
+
+4B
+
+2B
+
+4B
+
+4B
+
+2B
+
+4B
+
+4B
+40
+
+Alltoallv
+
+• Output parameter – recvbuf
+
+PROCESSES
+
+• Every process sends data of different
+lengths to other processes
+• int MPI_Alltoallv (sendbuf,
+sendcount, sdispls, sendtype,
+recvbuf, recvcount, rdispls, recvtype,
+comm)
+
+DATA
+
+0
+
+3B
+
+0
+
+0
+
+0
+
+2B
+
+4B
+
+0
+
+0
+
+0
+
+0
+
+4B
+
+3B
+
+0
+
+0
+
+0
+
+2B
+
+0
+41
+
+
